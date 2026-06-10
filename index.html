@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CodeRunner — Nauka Programowania przez Grę</title>
+<style>
+  /* =============================================
+     RESET I ZMIENNE
+  ============================================= */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --border:    #30363d;
+    --green:     #39d353;
+    --green-dim: #196127;
+    --blue:      #58a6ff;
+    --red:       #f78166;
+    --yellow:    #e3b341;
+    --text:      #c9d1d9;
+    --text-dim:  #6e7681;
+    --font:      'Courier New', Courier, monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* =============================================
+     1. INTERFEJS UŻYTKOWNIKA — HUD
+  ============================================= */
+  #hud {
+    width: 800px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  #hud .hud-group {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .hud-label { color: var(--text-dim); font-size: 11px; display: block; }
+  .hud-value { color: var(--green); font-size: 18px; font-weight: bold; }
+  .hud-value.lives { color: var(--red); }
+  .hud-value.level { color: var(--blue); }
+
+  #combo-display {
+    color: var(--yellow);
+    font-size: 13px;
+    min-width: 80px;
+    text-align: center;
+    transition: transform 0.1s;
+  }
+  #combo-display.pop { transform: scale(1.4); }
+
+  /* =============================================
+     CANVAS WRAPPER
+  ============================================= */
+  #game-wrap {
+    position: relative;
+    width: 800px;
+    flex-shrink: 0;
+  }
+
+  #gameCanvas {
+    display: block;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  /* =============================================
+     EKRANY NAKŁADKOWE (start / pause / game-over / win)
+  ============================================= */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(13, 17, 23, 0.92);
+    z-index: 10;
+    gap: 16px;
+    text-align: center;
+    padding: 24px;
+  }
+  .overlay.hidden { display: none; }
+
+  .overlay h1 {
+    font-size: 32px;
+    color: var(--green);
+    letter-spacing: 0.08em;
+    text-shadow: 0 0 20px var(--green-dim);
+  }
+  .overlay h2 { font-size: 20px; color: var(--blue); margin-bottom: 4px; }
+  .overlay p  { font-size: 13px; color: var(--text-dim); line-height: 1.7; max-width: 520px; }
+  .overlay .hint {
+    font-size: 12px; color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 4px;
+    background: var(--surface);
+  }
+  .overlay .hint kbd {
+    background: var(--border); color: var(--text);
+    padding: 1px 6px; border-radius: 3px; font-family: var(--font);
+  }
+
+  /* =============================================
+     PRZYCISKI
+  ============================================= */
+  .btn {
+    font-family: var(--font);
+    font-size: 14px;
+    letter-spacing: 0.06em;
+    padding: 10px 28px;
+    border: 1px solid var(--green);
+    background: transparent;
+    color: var(--green);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    text-transform: uppercase;
+  }
+  .btn:hover, .btn:focus {
+    background: var(--green);
+    color: var(--bg);
+    box-shadow: 0 0 14px var(--green-dim);
+    outline: none;
+  }
+  .btn.danger {
+    border-color: var(--red); color: var(--red);
+  }
+  .btn.danger:hover { background: var(--red); color: var(--bg); }
+
+  /* =============================================
+     PASEK DOLNY — LEGENDA
+  ============================================= */
+  #legend {
+    width: 800px;
+    display: flex;
+    gap: 24px;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch {
+    width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0;
+  }
+
+  /* =============================================
+     FLOATING SCORE POPUP (tworzymy JS-em)
+  ============================================= */
+  .score-popup {
+    position: absolute;
+    pointer-events: none;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--yellow);
+    text-shadow: 0 0 6px rgba(0,0,0,0.8);
+    animation: floatUp 0.9s ease-out forwards;
+    z-index: 20;
+  }
+  @keyframes floatUp {
+    0%   { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-50px) scale(1.2); }
+  }
+
+  /* =============================================
+     RAIN CANVAS (tło)
+  ============================================= */
+  #rainCanvas {
+    position: absolute;
+    inset: 0;
+    opacity: 0.07;
+    pointer-events: none;
+    z-index: 0;
+  }
+  #gameCanvas { position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+
+<!-- =============================================
+     1. INTERFEJS UŻYTKOWNIKA — HUD
+============================================= -->
+<div id="hud">
+  <div class="hud-group">
+    <div>
+      <span class="hud-label">PUNKTY</span>
+      <span class="hud-value" id="scoreDisplay">0</span>
+    </div>
+    <div>
+      <span class="hud-label">POZIOM</span>
+      <span class="hud-value level" id="levelDisplay">1</span>
+    </div>
+    <div>
+      <span class="hud-label">ŻYJE</span>
+      <span class="hud-value lives" id="livesDisplay">♥ ♥ ♥</span>
+    </div>
+  </div>
+  <div id="combo-display" title="Combo: zbieraj tokeny bez przerwy"></div>
+  <div class="hud-group">
+    <div style="text-align:right">
+      <span class="hud-label">TOKENY</span>
+      <span class="hud-value" id="tokenDisplay">0 / 0</span>
+    </div>
+    <button class="btn" id="pauseBtn" title="Pauza [P]">⏸ PAUSE</button>
+  </div>
+</div>
+
+<!-- =============================================
+     CANVAS WRAPPER
+============================================= -->
+<div id="game-wrap">
+  <canvas id="rainCanvas" width="800" height="480"></canvas>
+  <canvas id="gameCanvas" width="800" height="480"></canvas>
+
+  <!-- EKRANY -->
+  <div class="overlay" id="screenStart">
+    <h1>&gt; CodeRunner_</h1>
+    <h2>Naucz się programowania grając</h2>
+    <p>
+      Zbieraj <strong style="color:var(--yellow)">tokeny kodu</strong> (słowa kluczowe, zmienne, funkcje),
+      unikaj <strong style="color:var(--red)">bugów</strong> i <strong style="color:var(--red)">wyjątków</strong>.
+      Każdy zebrany token wyświetla ciekawostkę programistyczną.
+      Ukończ wszystkie poziomy, by zostać <strong style="color:var(--green)">Senior Developerem</strong>!
+    </p>
+    <div class="hint">
+      <kbd>←</kbd><kbd>→</kbd> ruch &nbsp;|&nbsp;
+      <kbd>↑</kbd> / <kbd>Space</kbd> skok &nbsp;|&nbsp;
+      <kbd>P</kbd> pauza &nbsp;|&nbsp;
+      <kbd>R</kbd> restart
+    </div>
+    <button class="btn" id="startBtn">▶ START GRY</button>
+  </div>
+
+  <div class="overlay hidden" id="screenPause">
+    <h1>// PAUZA</h1>
+    <p>Gra wstrzymana. Wciśnij <strong style="color:var(--green)">P</strong> lub kliknij przycisk, by kontynuować.</p>
+    <div style="display:flex;gap:12px">
+      <button class="btn" id="resumeBtn">▶ KONTYNUUJ</button>
+      <button class="btn danger" id="restartFromPauseBtn">↺ RESTART</button>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="screenGameOver">
+    <h1 style="color:var(--red)">✗ GAME OVER</h1>
+    <p id="gameOverMsg"></p>
+    <button class="btn" id="retryBtn">↺ SPRÓBUJ PONOWNIE</button>
+  </div>
+
+  <div class="overlay hidden" id="screenWin">
+    <h1>✓ WYGRAŁEŚ!</h1>
+    <p id="winMsg"></p>
+    <button class="btn" id="winRestartBtn">↺ ZAGRAJ PONOWNIE</button>
+  </div>
+
+  <div class="overlay hidden" id="screenTooltip">
+    <h2 id="tooltipTitle"></h2>
+    <p id="tooltipBody"></p>
+    <button class="btn" id="tooltipOkBtn">OK — DALEJ</button>
+  </div>
+</div>
+
+<!-- =============================================
+     PASEK DOLNY — LEGENDA
+============================================= -->
+<div id="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#58a6ff"></div>Gracz</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#e3b341"></div>Token kodu</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#f78166"></div>Bug / Wyjątek</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#39d353"></div>Platforma</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#a371f7"></div>Power-up (nieśmiertelność)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#79c0ff"></div>Wyjście (portal)</div>
+</div>
+
+<script>
+/* ==========================================================
+   CodeRunner — gra edukacyjna do nauki programowania
+   Wszystkie zmienne, funkcje i logika opisane poniżej.
+========================================================== */
+
+// -------------------------------------------------------
+// A. STAŁE KONFIGURACYJNE
+// -------------------------------------------------------
+const CANVAS_W   = 800;
+const CANVAS_H   = 480;
+const GRAVITY    = 0.55;
+const JUMP_FORCE = -12;
+const SPEED      = 3.8;
+const TILE       = 32;
+
+// Kolory (spójne z CSS)
+const C = {
+  bg:      '#0d1117',
+  surface: '#161b22',
+  border:  '#30363d',
+  green:   '#39d353',
+  blue:    '#58a6ff',
+  red:     '#f78166',
+  yellow:  '#e3b341',
+  purple:  '#a371f7',
+  cyan:    '#79c0ff',
+  text:    '#c9d1d9',
+  dim:     '#6e7681',
+};
+
+// -------------------------------------------------------
+// B. BAZA WIEDZY — TOKENY KODU
+//    Każdy token niesie ciekawostkę programistyczną.
+// -------------------------------------------------------
+const TOKEN_DATA = [
+  { label: 'let',        color: '#e3b341', title: 'let — deklaracja zmiennej',       body: '"let" deklaruje zmienną o zasięgu blokowym. Można ją ponownie przypisać, ale nie można ponownie zadeklarować w tym samym bloku.' },
+  { label: 'const',      color: '#e3b341', title: 'const — stała',                   body: '"const" deklaruje stałą — referencja nie może być zmieniona. Uwaga: jeśli stałą jest obiekt, jego właściwości nadal można modyfikować!' },
+  { label: 'var',        color: '#e3b341', title: 'var — stara deklaracja',           body: '"var" ma zasięg funkcji (nie bloku) i jest "hoistowany" na szczyt. Dziś preferujemy "let" i "const".' },
+  { label: 'function',   color: '#58a6ff', title: 'function — funkcja',               body: 'Funkcja to wydzielony blok kodu, który można wielokrotnie wywołać. To podstawa zasady DRY: Don\'t Repeat Yourself.' },
+  { label: '=>',         color: '#58a6ff', title: 'Arrow function',                   body: 'Funkcje strzałkowe (=>) to krótszy zapis. Nie mają własnego "this", co czyni je idealnymi do callbacków.' },
+  { label: 'if',         color: '#79c0ff', title: 'if — instrukcja warunkowa',        body: '"if" sprawdza warunek. Kod wewnątrz wykona się tylko wtedy, gdy warunek jest prawdziwy (truthy).' },
+  { label: 'for',        color: '#79c0ff', title: 'for — pętla',                      body: 'Pętla "for" powtarza blok kodu. Klasyczna forma: for(let i=0; i<n; i++) iteruje n razy.' },
+  { label: 'while',      color: '#79c0ff', title: 'while — pętla warunkowa',          body: '"while" wykonuje blok, dopóki warunek jest prawdziwy. Uważaj na pętle nieskończone!' },
+  { label: 'class',      color: '#a371f7', title: 'class — klasa',                   body: 'Klasa to szablon do tworzenia obiektów. Programowanie obiektowe (OOP) pomaga organizować kod w logiczne jednostki.' },
+  { label: 'return',     color: '#39d353', title: 'return — zwracanie wartości',      body: '"return" kończy funkcję i opcjonalnie zwraca wartość. Funkcja bez "return" zwraca undefined.' },
+  { label: 'import',     color: '#f78166', title: 'import — moduły ES6',              body: '"import" pozwala używać kodu z innych plików/modułów. Moduły pomagają organizować duże projekty.' },
+  { label: 'async',      color: '#79c0ff', title: 'async/await',                      body: '"async" oznacza funkcję asynchroniczną. "await" wewnątrz niej czeka na Promise — to elegancki sposób na kod nieblokujący.' },
+  { label: '[]',         color: '#e3b341', title: 'Tablica (Array)',                  body: 'Tablice przechowują listy wartości. Metody map(), filter(), reduce() to potężne narzędzia funkcyjne.' },
+  { label: '{}',         color: '#e3b341', title: 'Obiekt (Object)',                  body: 'Obiekt przechowuje pary klucz-wartość. To fundament JavaScriptu — prawie wszystko jest obiektem!' },
+  { label: 'null',       color: '#f78166', title: 'null — brak wartości',             body: '"null" to celowo przypisany brak wartości. Różni się od "undefined" — to programista mówi "tu nic nie ma".' },
+  { label: 'true',       color: '#39d353', title: 'Boolean true',                    body: 'Typ Boolean ma tylko dwie wartości: true i false. Są podstawą wszystkich decyzji w programie.' },
+  { label: 'try{}',      color: '#a371f7', title: 'try/catch — obsługa błędów',       body: '"try/catch" pozwala elegancko obsłużyć błędy. Dobry kod zawsze przewiduje, że coś może pójść nie tak.' },
+  { label: 'O(n)',       color: '#58a6ff', title: 'Złożoność obliczeniowa',           body: 'Notacja Big-O opisuje wydajność algorytmu. O(1) to stały czas, O(n) liniowy, O(n²) kwadratowy — unikaj tego ostatniego!' },
+  { label: 'git',        color: '#f78166', title: 'Git — kontrola wersji',            body: 'Git śledzi historię zmian w kodzie. "commit" zapisuje stan, "branch" tworzy gałąź, "merge" łączy gałęzie.' },
+  { label: 'API',        color: '#79c0ff', title: 'API — interfejs programistyczny',  body: 'API to kontrakt między programami. REST API używa HTTP — GET pobiera dane, POST tworzy, PUT aktualizuje, DELETE usuwa.' },
+];
+
+// -------------------------------------------------------
+// C. DEFINICJE POZIOMÓW
+//    Każdy poziom to obiekt z platformami, tokenami, bugami.
+//    Platforma: [x, y, w] w kafelkach TILE=32
+// -------------------------------------------------------
+const LEVELS = [
+  {
+    // Poziom 1 — Zmienne
+    name:    'Zmienne i Typy',
+    bgHint:  '#0d1117',
+    tokenLabels: ['let','const','var','true','null'],
+    platforms: [
+      [0, 14, 25],    // podłoga główna
+      [3, 10, 4],
+      [8, 8,  3],
+      [13,11, 4],
+      [18,9,  3],
+      [22,12, 3],
+    ],
+    bugs: [
+      { tx:6,  ty:13, patrol:2 },
+      { tx:14, ty:10, patrol:1.5 },
+      { tx:20, ty:8,  patrol:1 },
+    ],
+    powerup: { tx:10, ty:7 },
+    exit:    { tx:23, ty:11 },
+    playerStart: { tx:1, ty:13 },
+  },
+  {
+    // Poziom 2 — Funkcje
+    name:    'Funkcje i Scope',
+    bgHint:  '#0d111a',
+    tokenLabels: ['function','=>','return','async','import'],
+    platforms: [
+      [0, 14, 10],
+      [10,14, 5],
+      [16,14, 9],
+      [2, 10, 4],
+      [7, 8,  3],
+      [12,11, 3],
+      [17,9,  4],
+      [22,11, 3],
+    ],
+    bugs: [
+      { tx:1,  ty:13, patrol:3 },
+      { tx:11, ty:13, patrol:2 },
+      { tx:17, ty:13, patrol:4 },
+      { tx:8,  ty:7,  patrol:1.5 },
+      { tx:18, ty:8,  patrol:2 },
+    ],
+    powerup: { tx:13, ty:10 },
+    exit:    { tx:23, ty:10 },
+    playerStart: { tx:1, ty:13 },
+  },
+  {
+    // Poziom 3 — Struktury i Algorytmy
+    name:    'Struktury i Algorytmy',
+    bgHint:  '#0d1117',
+    tokenLabels: ['if','for','while','[]','{}','O(n)','class','try{}'],
+    platforms: [
+      [0, 14, 6],
+      [7, 14, 6],
+      [14,14, 5],
+      [20,14, 5],
+      [1, 11, 3],
+      [5, 9,  3],
+      [9, 12, 3],
+      [13,10, 3],
+      [17,8,  3],
+      [21,11, 3],
+    ],
+    bugs: [
+      { tx:1,  ty:13, patrol:2 },
+      { tx:7,  ty:13, patrol:2 },
+      { tx:14, ty:13, patrol:2 },
+      { tx:20, ty:13, patrol:2 },
+      { tx:6,  ty:8,  patrol:1.5 },
+      { tx:14, ty:9,  patrol:1.5 },
+      { tx:18, ty:7,  patrol:1 },
+    ],
+    powerup: { tx:2, ty:10 },
+    exit:    { tx:23, ty:13 },
+    playerStart: { tx:0.5, ty:13 },
+  },
+];
+
+// -------------------------------------------------------
+// D. STAN GRY
+// -------------------------------------------------------
+let state = {
+  screen:      'start',  // 'start'|'playing'|'pause'|'gameover'|'win'|'tooltip'
+  level:       0,
+  score:       0,
+  lives:       3,
+  combo:       0,
+  comboTimer:  0,
+  pendingTooltip: null,  // token-data do wyświetlenia
+  totalTokens: 0,
+  collectedTokens: 0,
+  highScore:   0,
+};
+
+// -------------------------------------------------------
+// E. OBIEKTY GRY
+// -------------------------------------------------------
+
+/** @type {Player} */
+let player;
+/** @type {Platform[]} */
+let platforms = [];
+/** @type {Token[]} */
+let tokens = [];
+/** @type {Bug[]} */
+let bugs = [];
+/** @type {Powerup|null} */
+let powerup = null;
+/** @type {Exit|null} */
+let exitPortal = null;
+/** @type {{x,y,label,alpha,vy}[]} */
+let floatingTexts = [];
+
+// -------------------------------------------------------
+// F. INPUT
+// -------------------------------------------------------
+const keys = {};
+
+// -------------------------------------------------------
+// G. CANVAS I KONTEKST
+// -------------------------------------------------------
+const canvas     = document.getElementById('gameCanvas');
+const ctx        = canvas.getContext('2d');
+const rainCanvas = document.getElementById('rainCanvas');
+const rctx       = rainCanvas.getContext('2d');
+
+// -------------------------------------------------------
+// H. RAIN — deszcz kodu w tle
+// -------------------------------------------------------
+const RAIN_CHARS = '01{}[]()=>+-*/&|!?;:'.split('');
+const rainDrops  = Array.from({ length: 40 }, () => ({
+  x:    Math.random() * CANVAS_W,
+  y:    Math.random() * CANVAS_H,
+  spd:  1 + Math.random() * 2,
+  char: RAIN_CHARS[Math.floor(Math.random() * RAIN_CHARS.length)],
+}));
+
+// ===============================================================
+//  KLASY OBIEKTÓW GRY
+// ===============================================================
+
+/**
+ * Klasa Player — reprezentuje postać gracza.
+ * Przechowuje pozycję, prędkość, stan skoku i nieśmiertelność.
+ */
+class Player {
+  /**
+   * @param {number} x - startowa pozycja X w pikselach
+   * @param {number} y - startowa pozycja Y w pikselach
+   */
+  constructor(x, y) {
+    this.x    = x;
+    this.y    = y;
+    this.w    = 24;
+    this.h    = 32;
+    this.vx   = 0;
+    this.vy   = 0;
+    this.onGround = false;
+    this.invincible    = false;
+    this.invincibleTimer = 0;
+    this.hitTimer = 0;        // migotanie po uderzeniu
+    this.frame = 0;           // animacja
+    this.frameTimer = 0;
+  }
+
+  /**
+   * update() — aktualizuje fizykę i animację gracza.
+   * Wywoływana w każdej klatce pętli gry (gameLoop).
+   * Aplikuje grawitację, ruch, kolizje z platformami.
+   * @param {number} dt - delta time (ms)
+   */
+  update(dt) {
+    // Grawitacja
+    this.vy += GRAVITY;
+
+    // Ruch poziomy
+    this.vx = 0;
+    if (keys['ArrowLeft']  || keys['a'] || keys['A']) this.vx = -SPEED;
+    if (keys['ArrowRight'] || keys['d'] || keys['D']) this.vx =  SPEED;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    // Granica pozioma (pętla ekranu)
+    if (this.x + this.w < 0)         this.x = CANVAS_W;
+    if (this.x > CANVAS_W)            this.x = -this.w;
+
+    // Kolizja z platformami
+    this.onGround = false;
+    resolvePlayerPlatformCollisions(this);
+
+    // Granica dolna — śmierć
+    if (this.y > CANVAS_H + 10) {
+      onPlayerDeath('Wypadłeś poza ekran!');
+    }
+
+    // Timery
+    if (this.invincible) {
+      this.invincibleTimer -= dt;
+      if (this.invincibleTimer <= 0) this.invincible = false;
+    }
+    if (this.hitTimer > 0) this.hitTimer -= dt;
+
+    // Animacja chodzenia
+    this.frameTimer += Math.abs(this.vx);
+    if (this.frameTimer > 8) { this.frame = (this.frame + 1) % 4; this.frameTimer = 0; }
+  }
+
+  /**
+   * draw() — rysuje gracza na canvasie.
+   * Wywoływana po update() w każdej klatce.
+   * Uwzględnia migotanie po uderzeniu i efekt nieśmiertelności.
+   */
+  draw() {
+    // Migotanie po trafieniu lub w nieśmiertelności
+    if (this.hitTimer > 0 && Math.floor(this.hitTimer / 80) % 2 === 0) return;
+    if (this.invincible && Math.floor(Date.now() / 100) % 2 === 0) {
+      ctx.globalAlpha = 0.5;
+    }
+
+    const px = Math.round(this.x);
+    const py = Math.round(this.y);
+
+    // Cień
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(px + this.w/2, py + this.h + 2, this.w/2, 5, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Ciało — pixel art style
+    ctx.fillStyle = C.blue;
+    ctx.fillRect(px, py + 8, this.w, this.h - 8);
+
+    // Głowa
+    ctx.fillStyle = '#ffd0a0';
+    ctx.fillRect(px + 4, py, this.w - 8, 12);
+
+    // Oczy
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(px + 6,  py + 3, 4, 4);
+    ctx.fillRect(px + 14, py + 3, 4, 4);
+
+    // Nogi (animacja)
+    ctx.fillStyle = '#1f6feb';
+    const legOff = [0, 3, 0, -3][this.frame];
+    ctx.fillRect(px + 2,  py + this.h - 8 + legOff, 8, 8);
+    ctx.fillRect(px + 14, py + this.h - 8 - legOff, 8, 8);
+
+    // Glow gdy nieśmiertelny
+    if (this.invincible) {
+      ctx.shadowColor  = C.purple;
+      ctx.shadowBlur   = 16;
+      ctx.fillStyle    = 'rgba(163,113,247,0.15)';
+      ctx.fillRect(px - 4, py - 4, this.w + 8, this.h + 8);
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  /** Zwraca prostokąt kolizji (AABB). */
+  get bounds() {
+    return { x: this.x + 2, y: this.y, w: this.w - 4, h: this.h };
+  }
+
+  /**
+   * jump() — wykonuje skok.
+   * Wywoływana z handleInput() gdy gracz jest na ziemi.
+   */
+  jump() {
+    if (this.onGround) {
+      this.vy = JUMP_FORCE;
+      this.onGround = false;
+    }
+  }
+}
+
+// -------------------------------------------------------
+
+/**
+ * Klasa Platform — pozioma platforma (AABB).
+ */
+class Platform {
+  /**
+   * @param {number} tx - pozycja X w kafelkach
+   * @param {number} ty - pozycja Y w kafelkach
+   * @param {number} tw - szerokość w kafelkach
+   */
+  constructor(tx, ty, tw) {
+    this.x = tx * TILE;
+    this.y = ty * TILE;
+    this.w = tw * TILE;
+    this.h = TILE / 2;
+  }
+
+  /**
+   * draw() — rysuje platformę z dekoracją (krata + etykiety).
+   * Wywoływana w każdej klatce pętli.
+   */
+  draw() {
+    const { x, y, w, h } = this;
+
+    // Wypełnienie
+    ctx.fillStyle = C.green;
+    ctx.fillRect(x, y, w, h);
+
+    // Pasek górny (jaśniejszy)
+    ctx.fillStyle = '#57f56e';
+    ctx.fillRect(x, y, w, 3);
+
+    // Kratka
+    ctx.strokeStyle = '#196127';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < w; i += TILE) {
+      ctx.strokeRect(x + i, y, TILE, h);
+    }
+
+    // Tekst: "//plat"
+    ctx.fillStyle = '#196127';
+    ctx.font = '9px monospace';
+    ctx.fillText('// platform', x + 4, y + h - 3);
+  }
+}
+
+// -------------------------------------------------------
+
+/**
+ * Klasa Token — zbieralny token kodu.
+ */
+class Token {
+  /**
+   * @param {number} tx   - pozycja X w kafelkach
+   * @param {number} ty   - pozycja Y w kafelkach
+   * @param {object} data - obiekt z TOKEN_DATA (label, color, title, body)
+   */
+  constructor(tx, ty, data) {
+    this.x       = tx * TILE;
+    this.y       = ty * TILE;
+    this.w       = 36;
+    this.h       = 20;
+    this.data    = data;
+    this.collected = false;
+    this.bobTimer  = Math.random() * Math.PI * 2;  // przesunięcie fazy
+  }
+
+  /**
+   * update() — animacja "bobowania" tokenu.
+   * Wywoływana w każdej klatce.
+   * @param {number} dt - delta time
+   */
+  update(dt) {
+    this.bobTimer += 0.04;
+  }
+
+  /**
+   * draw() — rysuje token jako etykietę z kodem.
+   * Wywoływana po update().
+   */
+  draw() {
+    if (this.collected) return;
+    const bob = Math.sin(this.bobTimer) * 4;
+    const px  = Math.round(this.x);
+    const py  = Math.round(this.y + bob);
+
+    // Poświata
+    ctx.shadowColor = this.data.color;
+    ctx.shadowBlur  = 10;
+
+    // Tło tokenu
+    ctx.fillStyle = this.data.color + '22';
+    roundRect(ctx, px - 2, py - 2, this.w + 4, this.h + 4, 4);
+    ctx.fill();
+
+    // Ramka
+    ctx.strokeStyle = this.data.color;
+    ctx.lineWidth   = 1.5;
+    roundRect(ctx, px, py, this.w, this.h, 3);
+    ctx.stroke();
+
+    // Etykieta
+    ctx.fillStyle   = this.data.color;
+    ctx.font        = 'bold 11px monospace';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.data.label, px + this.w / 2, py + this.h / 2);
+
+    ctx.shadowBlur   = 0;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /** Prostokąt kolizji. */
+  get bounds() { return { x: this.x, y: this.y, w: this.w, h: this.h }; }
+}
+
+// -------------------------------------------------------
+
+/**
+ * Klasa Bug — poruszający się wróg (bug/wyjątek).
+ */
+class Bug {
+  /**
+   * @param {number} tx       - startowa X w kafelkach
+   * @param {number} ty       - startowa Y w kafelkach (stoi na platformie)
+   * @param {number} patrol   - zasięg patrolu w kafelkach
+   */
+  constructor(tx, ty, patrol) {
+    this.startX   = tx * TILE;
+    this.x        = tx * TILE;
+    this.y        = (ty - 1) * TILE;  // stoi na platformie (ty*TILE - h)
+    this.w        = 28;
+    this.h        = 28;
+    this.patrol   = patrol * TILE;
+    this.speed    = 1.4;
+    this.dir      = 1;
+    this.frame    = 0;
+    this.frameT   = 0;
+    this.label    = pickBugLabel();
+  }
+
+  /**
+   * update() — porusza bugiem (patrol lewo/prawo) i animuje.
+   * Wywoływana w każdej klatce.
+   */
+  update() {
+    this.x += this.speed * this.dir;
+    if (this.x > this.startX + this.patrol) this.dir = -1;
+    if (this.x < this.startX - this.patrol) this.dir =  1;
+    this.frameT++;
+    if (this.frameT > 12) { this.frame = (this.frame + 1) % 2; this.frameT = 0; }
+  }
+
+  /**
+   * draw() — rysuje buga z etykietą błędu.
+   * Wywoływana po update().
+   */
+  draw() {
+    const px = Math.round(this.x);
+    const py = Math.round(this.y);
+
+    // Pulsująca poświata
+    const glow = (Math.sin(Date.now() / 300) + 1) * 5 + 5;
+    ctx.shadowColor = C.red;
+    ctx.shadowBlur  = glow;
+
+    // Ciało buga
+    ctx.fillStyle = C.red;
+    ctx.beginPath();
+    ctx.ellipse(px + 14, py + 18, 12, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Głowa
+    ctx.fillStyle = '#c0392b';
+    ctx.beginPath();
+    ctx.arc(px + 14, py + 10, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Oczy — "angry"
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(px + 8,  py + 7, 5, 5);
+    ctx.fillRect(px + 15, py + 7, 5, 5);
+    ctx.fillStyle = '#000';
+    const eyeDir = this.dir > 0 ? 1 : -1;
+    ctx.fillRect(px + 9  + eyeDir, py + 8, 3, 3);
+    ctx.fillRect(px + 16 + eyeDir, py + 8, 3, 3);
+
+    // Nóżki (animacja)
+    ctx.strokeStyle = C.red;
+    ctx.lineWidth = 2;
+    const legSwing = this.frame === 0 ? 4 : -4;
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(px + 14 + i * 8, py + 22);
+      ctx.lineTo(px + 14 + i * 8, py + 28 + (i === 0 ? 0 : legSwing));
+      ctx.stroke();
+    }
+
+    // Etykieta błędu
+    ctx.shadowBlur = 0;
+    ctx.fillStyle  = C.red;
+    ctx.font       = 'bold 9px monospace';
+    ctx.textAlign  = 'center';
+    ctx.fillText(this.label, px + 14, py - 3);
+    ctx.textAlign  = 'left';
+  }
+
+  /** Prostokąt kolizji (nieco węższy niż sprite). */
+  get bounds() { return { x: this.x + 4, y: this.y + 4, w: this.w - 8, h: this.h - 4 }; }
+}
+
+// -------------------------------------------------------
+
+/**
+ * Klasa Powerup — zbieralny power-up dający chwilową nieśmiertelność.
+ */
+class Powerup {
+  /**
+   * @param {number} tx - pozycja X w kafelkach
+   * @param {number} ty - pozycja Y w kafelkach
+   */
+  constructor(tx, ty) {
+    this.x         = tx * TILE;
+    this.y         = ty * TILE;
+    this.w         = 24;
+    this.h         = 24;
+    this.collected = false;
+    this.angle     = 0;
+  }
+
+  /**
+   * update() — obraca ikonę power-upu.
+   * Wywoływana w każdej klatce.
+   */
+  update() { this.angle += 0.03; }
+
+  /**
+   * draw() — rysuje obracający się symbol ⬡ (nieśmiertelność).
+   * Wywoływana po update().
+   */
+  draw() {
+    if (this.collected) return;
+    const cx = this.x + this.w / 2;
+    const cy = this.y + this.h / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(this.angle);
+
+    ctx.shadowColor = C.purple;
+    ctx.shadowBlur  = 18;
+    ctx.strokeStyle = C.purple;
+    ctx.lineWidth   = 2;
+    ctx.fillStyle   = C.purple + '33';
+
+    // Sześciokąt
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      i === 0 ? ctx.moveTo(Math.cos(a)*12, Math.sin(a)*12)
+              : ctx.lineTo(Math.cos(a)*12, Math.sin(a)*12);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    ctx.fillStyle  = C.purple;
+    ctx.font       = 'bold 9px monospace';
+    ctx.textAlign  = 'center';
+    ctx.fillText('★ inv', cx, this.y + this.h + 12);
+    ctx.textAlign  = 'left';
+  }
+
+  get bounds() { return { x: this.x, y: this.y, w: this.w, h: this.h }; }
+}
+
+// -------------------------------------------------------
+
+/**
+ * Klasa Exit — portal przejścia do następnego poziomu.
+ */
+class Exit {
+  /**
+   * @param {number} tx - pozycja X w kafelkach
+   * @param {number} ty - pozycja Y w kafelkach
+   */
+  constructor(tx, ty) {
+    this.x     = tx * TILE;
+    this.y     = ty * TILE;
+    this.w     = TILE;
+    this.h     = TILE * 1.5;
+    this.angle = 0;
+  }
+
+  /**
+   * update() — animuje portal.
+   * Wywoływana w każdej klatce.
+   */
+  update() { this.angle += 0.02; }
+
+  /**
+   * draw() — rysuje portal z efektem świetlnym.
+   * Wywoływana po update().
+   * Portal jest widoczny tylko gdy wszystkie tokeny zebrano.
+   */
+  draw() {
+    const open = state.collectedTokens >= state.totalTokens;
+    const cx   = this.x + this.w / 2;
+    const cy   = this.y + this.h / 2;
+    const col  = open ? C.cyan : C.dim;
+
+    ctx.shadowColor = col;
+    ctx.shadowBlur  = open ? 20 : 4;
+
+    // Elipsa portalu
+    ctx.strokeStyle = col;
+    ctx.lineWidth   = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, this.w/2, this.h/2, this.angle * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = col + (open ? '22' : '11');
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, this.w/2 - 3, this.h/2 - 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Strzałka wewnątrz
+    if (open) {
+      ctx.fillStyle = C.cyan;
+      ctx.font      = '18px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('▶', cx, cy + 7);
+      ctx.textAlign = 'left';
+    }
+
+    ctx.shadowBlur = 0;
+
+    // Etykieta
+    ctx.fillStyle  = col;
+    ctx.font       = 'bold 10px monospace';
+    ctx.textAlign  = 'center';
+    ctx.fillText(open ? 'EXIT' : 'LOCKED', cx, this.y - 6);
+    ctx.textAlign  = 'left';
+  }
+
+  get bounds() { return { x: this.x + 4, y: this.y, w: this.w - 8, h: this.h }; }
+}
+
+// ===============================================================
+//  FUNKCJE POMOCNICZE
+// ===============================================================
+
+/**
+ * roundRect() — rysuje zaokrąglony prostokąt na kontekście 2D.
+ * Wywoływana przez Token.draw() i inne miejsca wymagające zaokrąglonych rogów.
+ * @param {CanvasRenderingContext2D} c - kontekst canvas
+ * @param {number} x - lewa krawędź
+ * @param {number} y - górna krawędź
+ * @param {number} w - szerokość
+ * @param {number} h - wysokość
+ * @param {number} r - promień narożnika
+ */
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+/**
+ * aabbOverlap() — sprawdza kolizję dwóch prostokątów AABB.
+ * Wywoływana w checkCollisions() dla każdej pary obiektów.
+ * @param {{x,y,w,h}} a - pierwszy prostokąt
+ * @param {{x,y,w,h}} b - drugi prostokąt
+ * @returns {boolean} true jeśli prostokąty się nakładają
+ */
+function aabbOverlap(a, b) {
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
+
+/**
+ * pickBugLabel() — losuje etykietę błędu programistycznego dla buga.
+ * Wywoływana w konstruktorze Bug.
+ * @returns {string} nazwa błędu, np. 'NullPointerError'
+ */
+function pickBugLabel() {
+  const labels = [
+    'NullError','TypeError','RangeErr','SyntaxErr',
+    'RefError','StackOvfl','TimeoutErr','NaN','undefined',
+    'SEGFAULT','DeadLock','MemLeak',
+  ];
+  return labels[Math.floor(Math.random() * labels.length)];
+}
+
+/**
+ * resolvePlayerPlatformCollisions() — rozwiązuje kolizje gracza z platformami.
+ * Wywoływana w Player.update() po zastosowaniu prędkości.
+ * Implementuje opadanie na platformę od góry (jednostronna kolizja).
+ * @param {Player} p - obiekt gracza
+ */
+function resolvePlayerPlatformCollisions(p) {
+  for (const plat of platforms) {
+    const pb = p.bounds;
+    // Kolizja tylko jeśli gracz spada i był nad platformą
+    if (
+      p.vy >= 0 &&
+      pb.x + pb.w > plat.x &&
+      pb.x < plat.x + plat.w &&
+      pb.y + pb.h > plat.y &&
+      pb.y + pb.h < plat.y + plat.h + p.vy + 2
+    ) {
+      p.y  = plat.y - p.h;
+      p.vy = 0;
+      p.onGround = true;
+    }
+  }
+}
+
+// ===============================================================
+//  FUNKCJE ZARZĄDZANIA POZIOMEM
+// ===============================================================
+
+/**
+ * loadLevel() — ładuje dane poziomu: tworzy platformy, tokeny, bugi, portal.
+ * Wywoływana przy starcie gry i przejściu do następnego poziomu.
+ * @param {number} levelIndex - indeks poziomu w tablicy LEVELS
+ */
+function loadLevel(levelIndex) {
+  const lvl = LEVELS[levelIndex];
+  platforms = [];
+  tokens    = [];
+  bugs      = [];
+  floatingTexts = [];
+
+  // Tworzymy platformy
+  for (const [tx, ty, tw] of lvl.platforms) {
+    platforms.push(new Platform(tx, ty, tw));
+  }
+
+  // Rozmieszczamy tokeny NA platformach
+  const tokenPool = lvl.tokenLabels.map(label =>
+    TOKEN_DATA.find(t => t.label === label) || TOKEN_DATA[0]
+  );
+
+  // Każdy token kładziemy na środku kolejnej platformy (poza podłogą)
+  const nonFloor = platforms.filter((_, i) => i > 0);
+  tokenPool.forEach((data, i) => {
+    const plat = nonFloor[i % nonFloor.length];
+    const tx   = (plat.x + plat.w / 2 - 18) / TILE;
+    const ty   = (plat.y - 22) / TILE;
+    tokens.push(new Token(tx, ty, data));
+  });
+
+  state.totalTokens    = tokens.length;
+  state.collectedTokens = 0;
+
+  // Bugi
+  for (const b of lvl.bugs) {
+    bugs.push(new Bug(b.tx, b.ty, b.patrol));
+  }
+
+  // Power-up
+  powerup = lvl.powerup ? new Powerup(lvl.powerup.tx, lvl.powerup.ty) : null;
+
+  // Portal wyjścia
+  exitPortal = new Exit(lvl.exit.tx, lvl.exit.ty);
+
+  // Gracz
+  const ps = lvl.playerStart;
+  player   = new Player(ps.tx * TILE, (ps.ty - 1) * TILE);
+
+  updateHUD();
+}
+
+// ===============================================================
+//  MECHANIKA GRY — KOLIZJE I ZDARZENIA
+// ===============================================================
+
+/**
+ * checkCollisions() — sprawdza kolizje gracza ze wszystkimi obiektami.
+ * Wywoływana w każdej klatce pętli gry.
+ * Obsługuje: tokeny (zbieranie), bugi (obrażenia), power-up, portal wyjścia.
+ */
+function checkCollisions() {
+  const pb = player.bounds;
+
+  // --- Tokeny ---
+  for (const tok of tokens) {
+    if (!tok.collected && aabbOverlap(pb, tok.bounds)) {
+      collectToken(tok);
+    }
+  }
+
+  // --- Bugi ---
+  if (!player.invincible) {
+    for (const bug of bugs) {
+      if (aabbOverlap(pb, bug.bounds)) {
+        onPlayerDeath(`Zderzenie z ${bug.label}!`);
+        return;
+      }
+    }
+  }
+
+  // --- Power-up ---
+  if (powerup && !powerup.collected && aabbOverlap(pb, powerup.bounds)) {
+    powerup.collected = true;
+    player.invincible      = true;
+    player.invincibleTimer = 5000;  // 5 sekund
+    addScore(50, player.x, player.y, '+50 ★ INV');
+    updateHUD();
+  }
+
+  // --- Portal wyjścia ---
+  if (exitPortal && state.collectedTokens >= state.totalTokens) {
+    if (aabbOverlap(pb, exitPortal.bounds)) {
+      onLevelComplete();
+    }
+  }
+}
+
+/**
+ * collectToken() — obsługuje zebranie tokenu przez gracza.
+ * Wywoływana z checkCollisions() gdy gracz wchodzi na token.
+ * Aktualizuje combo, wynik, HUD i kolejkuje tooltip z wiedzą.
+ * @param {Token} tok - zebrany token
+ */
+function collectToken(tok) {
+  tok.collected = true;
+  state.collectedTokens++;
+  state.comboTimer = 180;  // klatek na wygaśnięcie combo
+  state.combo++;
+
+  const basePoints = 100;
+  const earned     = basePoints * state.combo;
+  addScore(earned, tok.x, tok.y, `+${earned} ×${state.combo}`);
+
+  // Pulsuj combo w HUD
+  const cd = document.getElementById('combo-display');
+  cd.textContent = `× ${state.combo} COMBO`;
+  cd.classList.remove('pop');
+  void cd.offsetWidth;
+  cd.classList.add('pop');
+
+  // Zapamiętaj tooltip — wyświetlimy po chwili
+  state.pendingTooltip = tok.data;
+  updateHUD();
+}
+
+/**
+ * addScore() — dodaje punkty do wyniku i pokazuje animowany tekst.
+ * Wywoływana przez collectToken(), onPlayerDeath() itd.
+ * @param {number} pts   - liczba punktów do dodania
+ * @param {number} wx    - pozycja X na scenie (canvas coords)
+ * @param {number} wy    - pozycja Y na scenie (canvas coords)
+ * @param {string} label - tekst do wyświetlenia (np. "+100 ×2")
+ */
+function addScore(pts, wx, wy, label) {
+  state.score += pts;
+  if (state.score > state.highScore) state.highScore = state.score;
+  floatingTexts.push({ x: wx, y: wy, label, alpha: 1, vy: -1.2, life: 60 });
+  updateHUD();
+}
+
+/**
+ * onPlayerDeath() — obsługuje śmierć gracza.
+ * Wywoływana gdy gracz dotknie buga lub wypadnie z ekranu.
+ * Odejmuje życie, uruchamia migotanie lub kończy grę.
+ * @param {string} reason - opis przyczyny śmierci (do debugowania)
+ */
+function onPlayerDeath(reason) {
+  if (player.invincible) return;  // nieśmiertelność chroni
+  state.lives--;
+  updateHUD();
+
+  if (state.lives <= 0) {
+    triggerGameOver(`Zabity przez: ${reason}\nWynik końcowy: ${state.score} pkt`);
+    return;
+  }
+
+  // Respawn z migotaniem
+  const ps = LEVELS[state.level].playerStart;
+  player.x         = ps.tx * TILE;
+  player.y         = (ps.ty - 1) * TILE;
+  player.vy        = 0;
+  player.hitTimer  = 1200;  // 1.2s migotania
+}
+
+/**
+ * onLevelComplete() — obsługuje ukończenie poziomu.
+ * Wywoływana z checkCollisions() gdy gracz wchodzi w otwarty portal.
+ * Dodaje bonus za poziom, przechodzi do następnego lub ogłasza wygraną.
+ */
+function onLevelComplete() {
+  const bonus = 500 + state.lives * 100;
+  addScore(bonus, CANVAS_W / 2 - 40, 60, `LEVEL +${bonus}`);
+
+  state.level++;
+  if (state.level >= LEVELS.length) {
+    triggerWin();
+    return;
+  }
+
+  state.combo      = 0;
+  state.comboTimer = 0;
+  loadLevel(state.level);
+}
+
+// ===============================================================
+//  ZARZĄDZANIE EKRANAMI
+// ===============================================================
+
+/**
+ * showScreen() — pokazuje/ukrywa ekrany nakładkowe.
+ * Wywoływana przy zmianie stanu gry (pauza, game over, win, itd.).
+ * @param {string} id - id elementu overlay do pokazania, lub null
+ */
+function showScreen(id) {
+  ['screenStart','screenPause','screenGameOver','screenWin','screenTooltip']
+    .forEach(s => document.getElementById(s).classList.add('hidden'));
+  if (id) document.getElementById(id).classList.remove('hidden');
+}
+
+/**
+ * triggerGameOver() — zatrzymuje grę i pokazuje ekran Game Over.
+ * Wywoływana z onPlayerDeath() gdy brak żyć.
+ * @param {string} msg - wiadomość wyświetlona graczowi
+ */
+function triggerGameOver(msg) {
+  state.screen = 'gameover';
+  document.getElementById('gameOverMsg').textContent = msg;
+  showScreen('screenGameOver');
+}
+
+/**
+ * triggerWin() — pokazuje ekran wygranej po przejściu wszystkich poziomów.
+ * Wywoływana z onLevelComplete() gdy levelIndex >= LEVELS.length.
+ */
+function triggerWin() {
+  state.screen = 'win';
+  document.getElementById('winMsg').textContent =
+    `Brawo! Zebrałeś wszystkie tokeny wiedzy i pokonałeś wszystkie bugi.\n` +
+    `Wynik: ${state.score} pkt | Rekord: ${state.highScore} pkt`;
+  showScreen('screenWin');
+}
+
+/**
+ * showTooltip() — pokazuje ekran z ciekawostką programistyczną po zebraniu tokenu.
+ * Wywoływana z pętli gry (gameLoop) gdy state.pendingTooltip jest ustawiony.
+ * Wstrzymuje grę do czasu kliknięcia "OK".
+ * @param {object} data - obiekt TOKEN_DATA z polami title i body
+ */
+function showTooltip(data) {
+  state.screen = 'tooltip';
+  document.getElementById('tooltipTitle').textContent = data.title;
+  document.getElementById('tooltipBody').textContent  = data.body;
+  showScreen('screenTooltip');
+  state.pendingTooltip = null;
+}
+
+/**
+ * restartGame() — resetuje cały stan gry i ładuje poziom 1.
+ * Wywoływana przez przycisk Restart i klawisz R.
+ */
+function restartGame() {
+  state.screen   = 'playing';
+  state.level    = 0;
+  state.score    = 0;
+  state.lives    = 3;
+  state.combo    = 0;
+  state.comboTimer = 0;
+  state.pendingTooltip = null;
+  showScreen(null);
+  loadLevel(0);
+}
+
+// ===============================================================
+//  AKTUALIZACJA HUD
+// ===============================================================
+
+/**
+ * updateHUD() — odświeża wszystkie wartości w panelu HUD.
+ * Wywoływana po każdej zmianie wyniku, żyć, poziomu lub tokenów.
+ */
+function updateHUD() {
+  document.getElementById('scoreDisplay').textContent = state.score;
+  document.getElementById('levelDisplay').textContent = state.level + 1;
+  document.getElementById('livesDisplay').textContent =
+    '♥ '.repeat(state.lives).trim() || '✗';
+  document.getElementById('tokenDisplay').textContent =
+    `${state.collectedTokens} / ${state.totalTokens}`;
+}
+
+// ===============================================================
+//  FLOATING TEXTS
+// ===============================================================
+
+/**
+ * updateFloatingTexts() — przesuwa i usuwa animowane teksty punktacji.
+ * Wywoływana w każdej klatce pętli gry.
+ */
+function updateFloatingTexts() {
+  floatingTexts = floatingTexts.filter(t => t.life > 0);
+  for (const t of floatingTexts) {
+    t.y   += t.vy;
+    t.life--;
+    t.alpha = t.life / 60;
+  }
+}
+
+/**
+ * drawFloatingTexts() — rysuje animowane teksty punktacji na canvasie.
+ * Wywoływana po updateFloatingTexts() w każdej klatce.
+ */
+function drawFloatingTexts() {
+  for (const t of floatingTexts) {
+    ctx.globalAlpha = t.alpha;
+    ctx.fillStyle   = C.yellow;
+    ctx.font        = 'bold 14px monospace';
+    ctx.textAlign   = 'center';
+    ctx.fillText(t.label, t.x + 20, t.y);
+    ctx.textAlign   = 'left';
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ===============================================================
+//  TŁO — MATRIX RAIN
+// ===============================================================
+
+/**
+ * drawRain() — rysuje animowany deszcz znaków kodu w tle.
+ * Wywoływana na osobnym rainCanvas w każdej klatce.
+ * Działa niezależnie od stanu gry (zawsze aktywny).
+ */
+function drawRain() {
+  rctx.fillStyle = 'rgba(13,17,23,0.15)';
+  rctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  rctx.fillStyle = '#39d353';
+  rctx.font      = '12px monospace';
+  for (const d of rainDrops) {
+    d.y += d.spd;
+    if (d.y > CANVAS_H) {
+      d.y    = -12;
+      d.x    = Math.random() * CANVAS_W;
+      d.char = RAIN_CHARS[Math.floor(Math.random() * RAIN_CHARS.length)];
+    }
+    rctx.fillText(d.char, d.x, d.y);
+  }
+}
+
+// ===============================================================
+//  COMBO TIMER
+// ===============================================================
+
+/**
+ * updateCombo() — odlicza czas combo i zeruje je po wygaśnięciu.
+ * Wywoływana w każdej klatce gdy gra aktywna.
+ */
+function updateCombo() {
+  if (state.comboTimer > 0) {
+    state.comboTimer--;
+    if (state.comboTimer === 0) {
+      state.combo = 0;
+      document.getElementById('combo-display').textContent = '';
+    }
+  }
+}
+
+// ===============================================================
+//  RYSOWANIE TŁA SCENY
+// ===============================================================
+
+/**
+ * drawBackground() — rysuje tło sceny: siatkę i etykiety poziomu.
+ * Wywoływana na początku każdej klatki rysowania.
+ */
+function drawBackground() {
+  // Przezroczyste tło (rain canvas pod spodem)
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // Subtelna siatka
+  ctx.strokeStyle = '#ffffff08';
+  ctx.lineWidth   = 1;
+  for (let x = 0; x < CANVAS_W; x += TILE) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke();
+  }
+  for (let y = 0; y < CANVAS_H; y += TILE) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke();
+  }
+
+  // Nazwa poziomu (prawy górny róg)
+  const lvl = LEVELS[state.level];
+  ctx.fillStyle   = '#ffffff18';
+  ctx.font        = '13px monospace';
+  ctx.textAlign   = 'right';
+  ctx.fillText(`// Level ${state.level + 1}: ${lvl.name}`, CANVAS_W - 10, 20);
+  ctx.textAlign   = 'left';
+}
+
+// ===============================================================
+//  GŁÓWNA PĘTLA GRY
+// ===============================================================
+let lastTime = 0;
+
+/**
+ * gameLoop() — główna pętla gry, wywoływana przez requestAnimationFrame.
+ * Koordynuje update i draw wszystkich obiektów.
+ * Sprawdza stan gry (pauzę, tooltip) zanim zaktualizuje logikę.
+ * @param {number} timestamp - czas klatki z requestAnimationFrame (ms)
+ */
+function gameLoop(timestamp) {
+  requestAnimationFrame(gameLoop);
+
+  const dt = Math.min(timestamp - lastTime, 32);  // max 32ms (min ~30 FPS)
+  lastTime = timestamp;
+
+  // Zawsze rysujemy tło (rain)
+  drawRain();
+
+  // Jeśli nie gramy — nie aktualizujemy logiki
+  if (state.screen !== 'playing') return;
+
+  // --- Sprawdź czy jest oczekujący tooltip ---
+  if (state.pendingTooltip) {
+    showTooltip(state.pendingTooltip);
+    return;
+  }
+
+  // --- UPDATE ---
+  player.update(dt);
+
+  for (const b of bugs)   b.update();
+  for (const t of tokens) t.update(dt);
+  powerup    && powerup.update();
+  exitPortal && exitPortal.update();
+
+  checkCollisions();
+  updateFloatingTexts();
+  updateCombo();
+
+  // --- DRAW ---
+  drawBackground();
+
+  for (const p of platforms) p.draw();
+  for (const t of tokens)    t.draw();
+  powerup    && powerup.draw();
+  exitPortal && exitPortal.draw();
+  for (const b of bugs) b.draw();
+  player.draw();
+  drawFloatingTexts();
+}
+
+// ===============================================================
+//  OBSŁUGA ZDARZEŃ
+// ===============================================================
+
+/**
+ * handleKeyDown() — obsługuje naciśnięcie klawisza.
+ * Rejestruje klawisz w tablicy keys[] (dla ruchu).
+ * Obsługuje skoki (Space/ArrowUp), pauzę (P), restart (R).
+ * @param {KeyboardEvent} e - zdarzenie klawiatury
+ */
+function handleKeyDown(e) {
+  keys[e.key] = true;
+
+  if (e.key === ' ' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (state.screen === 'playing') player.jump();
+  }
+
+  if (e.key === 'p' || e.key === 'P') {
+    if (state.screen === 'playing') {
+      state.screen = 'pause';
+      showScreen('screenPause');
+    } else if (state.screen === 'pause') {
+      resumeGame();
+    }
+  }
+
+  if (e.key === 'r' || e.key === 'R') {
+    if (state.screen !== 'start') restartGame();
+  }
+}
+
+/**
+ * handleKeyUp() — obsługuje zwolnienie klawisza.
+ * Usuwa klawisz z tablicy keys[].
+ * @param {KeyboardEvent} e - zdarzenie klawiatury
+ */
+function handleKeyUp(e) {
+  keys[e.key] = false;
+}
+
+/**
+ * resumeGame() — wznawia grę z pauzy.
+ * Wywoływana przez przycisk "Kontynuuj" lub klawisz P podczas pauzy.
+ */
+function resumeGame() {
+  state.screen = 'playing';
+  showScreen(null);
+}
+
+// Rejestracja zdarzeń klawiatury
+window.addEventListener('keydown', handleKeyDown);
+window.addEventListener('keyup',   handleKeyUp);
+
+// Przyciski HUD i ekranów nakładkowych
+
+/** Przycisk PAUSE w HUD */
+document.getElementById('pauseBtn').addEventListener('click', () => {
+  if (state.screen === 'playing') {
+    state.screen = 'pause';
+    showScreen('screenPause');
+  }
+});
+
+/** Przycisk START na ekranie startowym */
+document.getElementById('startBtn').addEventListener('click', () => {
+  restartGame();
+});
+
+/** Przycisk KONTYNUUJ na ekranie pauzy */
+document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+
+/** Przycisk RESTART z ekranu pauzy */
+document.getElementById('restartFromPauseBtn').addEventListener('click', restartGame);
+
+/** Przycisk SPRÓBUJ PONOWNIE po game over */
+document.getElementById('retryBtn').addEventListener('click', restartGame);
+
+/** Przycisk ZAGRAJ PONOWNIE po wygranej */
+document.getElementById('winRestartBtn').addEventListener('click', restartGame);
+
+/** Przycisk OK w tooltipie z wiedzą */
+document.getElementById('tooltipOkBtn').addEventListener('click', () => {
+  state.screen = 'playing';
+  showScreen(null);
+});
+
+// ===============================================================
+//  START APLIKACJI
+// ===============================================================
+showScreen('screenStart');
+requestAnimationFrame(gameLoop);
+
+</script>
+</body>
+</html>
