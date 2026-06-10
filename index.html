@@ -452,7 +452,7 @@ let state = {
   level:       0,
   score:       0,
   lives:       3,
-  combo:       0,
+  combo:       60,
   comboTimer:  0,
   pendingTooltip: null,  // token-data do wyświetlenia
   totalTokens: 0,
@@ -522,7 +522,7 @@ class Player {
     this.w    = 24;
     this.h    = 32;
     this.vx   = 0;
-    this.vy   = 0;
+    this.vy   = 20;
     this.onGround = false;
     this.invincible    = false;
     this.invincibleTimer = 0;
